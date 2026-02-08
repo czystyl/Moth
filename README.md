@@ -4,6 +4,10 @@
 
 A macOS menubar app that watches your YouTube habit, earns your screen time through work, and snaps you out of the binge before it starts.
 
+<p align="center">
+  <img src="Resources/screenshots/menubar.png" alt="Moth menubar" width="400">
+</p>
+
 ## What it does
 
 Moth lives in your menubar and quietly tracks how you spend your screen time:
