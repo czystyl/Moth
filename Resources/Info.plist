@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.moth.app</string>
+    <key>CFBundleName</key>
+    <string>Moth</string>
+    <key>CFBundleDisplayName</key>
+    <string>Moth</string>
+    <key>CFBundleExecutable</key>
+    <string>Moth</string>
+    <key>CFBundleVersion</key>
+    <string>1.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>Moth needs screen recording access to detect Picture-in-Picture windows.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Moth needs automation access to read the current browser tab URL.</string>
+</dict>
+</plist>
