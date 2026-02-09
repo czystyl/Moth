@@ -3,7 +3,7 @@
 import AppKit
 import Foundation
 
-// Generate Moth app icon: gradient circle (red→orange) with a white clock symbol
+// Generate Moth app icon: gradient circle (red→orange) with a white moth silhouette
 
 let sizes: [(name: String, size: Int)] = [
     ("icon_16x16", 16),
@@ -49,55 +49,139 @@ func renderIcon(size: Int) -> NSImage {
 
         ctx.resetClip()
 
-        // Clock circle (white outline)
-        let clockRadius = s * 0.28
+        // Moth silhouette in white
         let center = CGPoint(x: s / 2, y: s / 2)
-        let lineWidth = s * 0.06
 
+        // Subtle radial glow behind the moth
+        let glowColors = [
+            NSColor(white: 1, alpha: 0.25).cgColor,
+            NSColor(white: 1, alpha: 0).cgColor,
+        ] as CFArray
+        if let glow = CGGradient(colorsSpace: colorSpace, colors: glowColors, locations: [0, 1]) {
+            ctx.drawRadialGradient(
+                glow,
+                startCenter: center, startRadius: 0,
+                endCenter: center, endRadius: s * 0.35,
+                options: []
+            )
+        }
+
+        ctx.setFillColor(NSColor.white.cgColor)
         ctx.setStrokeColor(NSColor.white.cgColor)
-        ctx.setLineWidth(lineWidth)
-        ctx.addArc(
-            center: center,
-            radius: clockRadius,
-            startAngle: 0,
-            endAngle: .pi * 2,
-            clockwise: false
+
+        // Body — elongated vertical ellipse
+        let bodyW = s * 0.07
+        let bodyH = s * 0.30
+        let bodyY = center.y - bodyH * 0.45
+        ctx.fillEllipse(in: CGRect(
+            x: center.x - bodyW / 2, y: bodyY,
+            width: bodyW, height: bodyH
+        ))
+
+        // Head
+        let headR = s * 0.04
+        let headY = bodyY + bodyH
+        ctx.fillEllipse(in: CGRect(
+            x: center.x - headR, y: headY - headR * 0.3,
+            width: headR * 2, height: headR * 2
+        ))
+
+        // Antennae
+        let antennaBase = CGPoint(x: center.x, y: headY + headR * 1.5)
+        ctx.setLineWidth(s * 0.015)
+        ctx.setLineCap(.round)
+
+        ctx.move(to: antennaBase)
+        ctx.addQuadCurve(to:
+            CGPoint(x: center.x - s * 0.15, y: center.y + s * 0.35),
+            control: CGPoint(x: center.x - s * 0.04, y: center.y + s * 0.32)
         )
         ctx.strokePath()
 
-        // Clock hands
-        ctx.setLineCap(.round)
-
-        // Hour hand (pointing to 10 o'clock)
-        let hourAngle = CGFloat.pi / 2 + CGFloat.pi / 3 // 10 o'clock
-        let hourLength = clockRadius * 0.5
-        ctx.setLineWidth(lineWidth * 1.2)
-        ctx.move(to: center)
-        ctx.addLine(to: CGPoint(
-            x: center.x + cos(hourAngle) * hourLength,
-            y: center.y + sin(hourAngle) * hourLength
-        ))
+        ctx.move(to: antennaBase)
+        ctx.addQuadCurve(to:
+            CGPoint(x: center.x + s * 0.15, y: center.y + s * 0.35),
+            control: CGPoint(x: center.x + s * 0.04, y: center.y + s * 0.32)
+        )
         ctx.strokePath()
 
-        // Minute hand (pointing to 12 o'clock)
-        let minuteAngle = CGFloat.pi / 2
-        let minuteLength = clockRadius * 0.7
-        ctx.setLineWidth(lineWidth * 0.8)
-        ctx.move(to: center)
-        ctx.addLine(to: CGPoint(
-            x: center.x + cos(minuteAngle) * minuteLength,
-            y: center.y + sin(minuteAngle) * minuteLength
-        ))
-        ctx.strokePath()
+        // Upper wings — large, spread wide
+        let ulWing = CGMutablePath()
+        ulWing.move(to: CGPoint(x: center.x - bodyW / 2, y: center.y + bodyH * 0.1))
+        ulWing.addCurve(
+            to: CGPoint(x: center.x - s * 0.38, y: center.y + s * 0.22),
+            control1: CGPoint(x: center.x - s * 0.18, y: center.y + s * 0.25),
+            control2: CGPoint(x: center.x - s * 0.35, y: center.y + s * 0.32)
+        )
+        ulWing.addCurve(
+            to: CGPoint(x: center.x - bodyW / 2, y: center.y - bodyH * 0.15),
+            control1: CGPoint(x: center.x - s * 0.40, y: center.y + s * 0.08),
+            control2: CGPoint(x: center.x - s * 0.20, y: center.y - s * 0.05)
+        )
+        ulWing.closeSubpath()
+        ctx.addPath(ulWing)
+        ctx.fillPath()
 
-        // Center dot
-        let dotSize = lineWidth * 1.2
-        ctx.setFillColor(NSColor.white.cgColor)
+        let urWing = CGMutablePath()
+        urWing.move(to: CGPoint(x: center.x + bodyW / 2, y: center.y + bodyH * 0.1))
+        urWing.addCurve(
+            to: CGPoint(x: center.x + s * 0.38, y: center.y + s * 0.22),
+            control1: CGPoint(x: center.x + s * 0.18, y: center.y + s * 0.25),
+            control2: CGPoint(x: center.x + s * 0.35, y: center.y + s * 0.32)
+        )
+        urWing.addCurve(
+            to: CGPoint(x: center.x + bodyW / 2, y: center.y - bodyH * 0.15),
+            control1: CGPoint(x: center.x + s * 0.40, y: center.y + s * 0.08),
+            control2: CGPoint(x: center.x + s * 0.20, y: center.y - s * 0.05)
+        )
+        urWing.closeSubpath()
+        ctx.addPath(urWing)
+        ctx.fillPath()
+
+        // Lower wings — smaller, angled downward
+        let llWing = CGMutablePath()
+        llWing.move(to: CGPoint(x: center.x - bodyW / 2, y: center.y - bodyH * 0.05))
+        llWing.addCurve(
+            to: CGPoint(x: center.x - s * 0.25, y: center.y - s * 0.22),
+            control1: CGPoint(x: center.x - s * 0.14, y: center.y - s * 0.05),
+            control2: CGPoint(x: center.x - s * 0.24, y: center.y - s * 0.10)
+        )
+        llWing.addCurve(
+            to: CGPoint(x: center.x - bodyW / 2, y: center.y - bodyH * 0.25),
+            control1: CGPoint(x: center.x - s * 0.22, y: center.y - s * 0.28),
+            control2: CGPoint(x: center.x - s * 0.10, y: center.y - s * 0.22)
+        )
+        llWing.closeSubpath()
+        ctx.addPath(llWing)
+        ctx.fillPath()
+
+        let rlWing = CGMutablePath()
+        rlWing.move(to: CGPoint(x: center.x + bodyW / 2, y: center.y - bodyH * 0.05))
+        rlWing.addCurve(
+            to: CGPoint(x: center.x + s * 0.25, y: center.y - s * 0.22),
+            control1: CGPoint(x: center.x + s * 0.14, y: center.y - s * 0.05),
+            control2: CGPoint(x: center.x + s * 0.24, y: center.y - s * 0.10)
+        )
+        rlWing.addCurve(
+            to: CGPoint(x: center.x + bodyW / 2, y: center.y - bodyH * 0.25),
+            control1: CGPoint(x: center.x + s * 0.22, y: center.y - s * 0.28),
+            control2: CGPoint(x: center.x + s * 0.10, y: center.y - s * 0.22)
+        )
+        rlWing.closeSubpath()
+        ctx.addPath(rlWing)
+        ctx.fillPath()
+
+        // Wing eye-spots (subtle circles on upper wings)
+        let spotR = s * 0.025
+        let spotAlpha: CGFloat = 0.3
+        ctx.setFillColor(NSColor(red: 0.9, green: 0.15, blue: 0.1, alpha: spotAlpha).cgColor)
         ctx.fillEllipse(in: CGRect(
-            x: center.x - dotSize / 2,
-            y: center.y - dotSize / 2,
-            width: dotSize,
-            height: dotSize
+            x: center.x - s * 0.22 - spotR, y: center.y + s * 0.12 - spotR,
+            width: spotR * 2, height: spotR * 2
+        ))
+        ctx.fillEllipse(in: CGRect(
+            x: center.x + s * 0.22 - spotR, y: center.y + s * 0.12 - spotR,
+            width: spotR * 2, height: spotR * 2
         ))
 
         return true

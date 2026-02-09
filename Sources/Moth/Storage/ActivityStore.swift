@@ -35,6 +35,17 @@ final class ActivityStore {
                 PRIMARY KEY (date, category)
             )
         """)
+        db.exec("""
+            CREATE TABLE IF NOT EXISTS watch_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                started_at INTEGER NOT NULL,
+                ended_at INTEGER NOT NULL,
+                category TEXT NOT NULL,
+                title TEXT NOT NULL
+            )
+        """)
+        db.exec("CREATE INDEX IF NOT EXISTS idx_watch_history_date ON watch_history(date)")
     }
 
     func insertSample(category: ActivityCategory, appName: String, windowTitle: String) {
@@ -46,6 +57,46 @@ final class ActivityStore {
             sqlite3_bind_text(stmt, 2, category.rawValue, -1, SQLITE_TRANSIENT)
             sqlite3_bind_text(stmt, 3, appName, -1, SQLITE_TRANSIENT)
             sqlite3_bind_text(stmt, 4, windowTitle, -1, SQLITE_TRANSIENT)
+        }
+    }
+
+    func recordWatch(category: ActivityCategory, title: String) {
+        let now = Int(Date().timeIntervalSince1970)
+        let today = Self.todayString()
+
+        // Check if the most recent watch_history row has the same title and ended recently
+        let recent: (Int, Int, String)? = db.query(
+            "SELECT id, ended_at, title FROM watch_history ORDER BY id DESC LIMIT 1",
+            bind: { _ in },
+            map: { stmt in
+                let id = Int(sqlite3_column_int64(stmt, 0))
+                let endedAt = Int(sqlite3_column_int64(stmt, 1))
+                let ptr = sqlite3_column_text(stmt, 2)
+                let t = ptr.map { String(cString: $0) } ?? ""
+                return (id, endedAt, t)
+            }
+        ).first
+
+        if let (id, endedAt, existingTitle) = recent,
+           existingTitle == title,
+           now - endedAt <= 120 {
+            // Extend existing session
+            db.run("UPDATE watch_history SET ended_at = ? WHERE id = ?") { stmt in
+                sqlite3_bind_int64(stmt, 1, Int64(now))
+                sqlite3_bind_int64(stmt, 2, Int64(id))
+            }
+            return
+        }
+
+        // Insert new watch session
+        db.run("""
+            INSERT INTO watch_history (date, started_at, ended_at, category, title) VALUES (?, ?, ?, ?, ?)
+        """) { stmt in
+            sqlite3_bind_text(stmt, 1, today, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_int64(stmt, 2, Int64(now))
+            sqlite3_bind_int64(stmt, 3, Int64(now))
+            sqlite3_bind_text(stmt, 4, category.rawValue, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 5, title, -1, SQLITE_TRANSIENT)
         }
     }
 
@@ -168,6 +219,45 @@ final class ActivityStore {
         return dateStrings.map { dateStr in
             (dateStr, lookup[dateStr] ?? 0)
         }
+    }
+
+    /// Returns aggregated YouTube and working seconds for the past 6 days (not including today).
+    func past6DaysBudgetData() -> (youtubeSeconds: Int, workingSeconds: Int) {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        fmt.timeZone = .current
+        let cal = Calendar.current
+
+        let today = fmt.string(from: Date())
+        let sixDaysAgo = fmt.string(from: cal.date(byAdding: .day, value: -6, to: Date())!)
+
+        let rows: [(String, Int)] = db.query(
+            "SELECT category, SUM(total_seconds) FROM daily_summaries WHERE date >= ? AND date < ? GROUP BY category",
+            bind: { stmt in
+                sqlite3_bind_text(stmt, 1, sixDaysAgo, -1, SQLITE_TRANSIENT)
+                sqlite3_bind_text(stmt, 2, today, -1, SQLITE_TRANSIENT)
+            },
+            map: { stmt in
+                let catPtr = sqlite3_column_text(stmt, 0)
+                let cat = catPtr.map { String(cString: $0) } ?? ""
+                let secs = Int(sqlite3_column_int(stmt, 1))
+                return (cat, secs)
+            }
+        )
+
+        var youtubeSeconds = 0
+        var workingSeconds = 0
+        for (cat, secs) in rows {
+            switch cat {
+            case "youtube", "youtube_shorts":
+                youtubeSeconds += secs
+            case "working":
+                workingSeconds += secs
+            default:
+                break
+            }
+        }
+        return (youtubeSeconds: youtubeSeconds, workingSeconds: workingSeconds)
     }
 
     /// Delete individual samples older than 7 days (summaries are kept)

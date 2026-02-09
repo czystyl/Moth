@@ -74,49 +74,59 @@ struct MenuBarView: View {
 
             if settingsExpanded {
                 VStack(alignment: .leading, spacing: 8) {
+                    Toggle("Pause reminders", isOn: Binding(
+                        get: { !monitor.notificationsEnabled },
+                        set: { monitor.notificationsEnabled = !$0 }
+                    ))
+
                     Toggle("Start on launch", isOn: $startOnLaunch)
-                    Toggle("Break reminders", isOn: $monitor.notificationsEnabled)
+
+                    Stepper(
+                        "Earn \(Int(monitor.ytBudgetMinutesPerHour)) min / hour worked",
+                        value: $monitor.ytBudgetMinutesPerHour,
+                        in: 1...30
+                    )
 
                     if monitor.notificationsEnabled {
                         Stepper(
-                            "Remind every \(monitor.reminderIntervalMinutes) min",
+                            "Remind every \(monitor.reminderIntervalMinutes) min when watching",
                             value: $monitor.reminderIntervalMinutes,
                             in: 1...30
                         )
-                    }
-
-                    Divider()
-
-                    HStack {
-                        Button(monitor.isRunning ? "Stop" : "Start") {
-                            if monitor.isRunning {
-                                monitor.stop()
-                            } else {
-                                monitor.start()
-                            }
-                        }
-                        .buttonStyle(.link)
-                        .foregroundStyle(monitor.isRunning ? .orange : .green)
-
-                        Spacer()
-
-                        Button("Test Notification") {
-                            monitor.fireBreakReminder(minutes: 0)
-                        }
-                        .buttonStyle(.link)
-
-                        Spacer()
-
-                        Button("Quit") {
-                            NSApplication.shared.terminate(nil)
-                        }
-                        .buttonStyle(.link)
-                        .foregroundStyle(.red)
                     }
                 }
                 .font(.subheadline)
                 .padding(.leading, 4)
             }
+
+            Divider()
+
+            HStack {
+                Button {
+                    if monitor.isRunning {
+                        monitor.stop()
+                    } else {
+                        monitor.start()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(monitor.isRunning ? .green : .orange)
+                            .frame(width: 8, height: 8)
+                        Text(monitor.isRunning ? "Running" : "Paused")
+                    }
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                Button("Quit") {
+                    NSApplication.shared.terminate(nil)
+                }
+                .buttonStyle(.link)
+                .foregroundStyle(.red)
+            }
+            .font(.subheadline)
         }
         .padding(16)
         .frame(width: 420)
@@ -133,29 +143,37 @@ struct MenuBarView: View {
         timeline = store.todayTimeline()
         weekTrend = store.weekYouTubeSummary()
     }
+
 }
 
 private struct BudgetRow: View {
     @ObservedObject var monitor: ActivityMonitor
 
+    private var budgetColor: Color {
+        let remaining = monitor.budgetRemainingSeconds
+        if remaining < 0 { return .red }
+        if remaining < 300 { return .orange }
+        return .green
+    }
+
     var body: some View {
         let remaining = monitor.budgetRemainingSeconds
-        let earned = monitor.earnedYoutubeSeconds
 
         HStack {
             Image(systemName: "gauge.with.needle")
                 .foregroundStyle(.secondary)
+            Text("\(TimeFormatter.format(seconds: monitor.weekYoutubeSeconds)) / \(TimeFormatter.format(seconds: monitor.earnedYoutubeSeconds)) this week")
+                .foregroundStyle(budgetColor)
+            Spacer()
             if remaining >= 0 {
-                Text("Budget: \(remaining / 60)m remaining")
+                Text("\(remaining / 60)m remaining")
+                    .font(.caption)
                     .foregroundStyle(.green)
             } else {
-                Text("Budget: \(abs(remaining) / 60)m over")
+                Text("\(abs(remaining) / 60)m over")
+                    .font(.caption)
                     .foregroundStyle(.red)
             }
-            Spacer()
-            Text("Earned \(earned / 60)m from \(TimeFormatter.format(seconds: monitor.workingSeconds)) work")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
         .font(.subheadline)
     }

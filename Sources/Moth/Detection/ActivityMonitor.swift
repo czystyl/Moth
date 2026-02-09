@@ -16,6 +16,10 @@ final class ActivityMonitor: ObservableObject {
     @Published var youtubeShortsSeconds: Int = 0
     @Published var workingSeconds: Int = 0
 
+    // Past 6 days (from DB, refreshed on startup + day change)
+    var past6DaysYoutubeSeconds: Int = 0
+    var past6DaysWorkingSeconds: Int = 0
+
     private var timer: Timer?
 
     /// Called every 2s — always update daily summary
@@ -28,6 +32,11 @@ final class ActivityMonitor: ObservableObject {
 
     private var lastCategory: ActivityCategory?
     private var lastSampleTime: Date = .distantPast
+    private var lastPollDay: String = ""
+
+    /// Called when the calendar day changes (e.g., after overnight sleep).
+    /// The host should reload today's summary from the store.
+    var onDayChanged: (() -> Void)?
 
     @AppStorage("notificationsEnabled") var notificationsEnabled = true
     @AppStorage("reminderIntervalMinutes") var reminderIntervalMinutes = 5
@@ -39,33 +48,48 @@ final class ActivityMonitor: ObservableObject {
     private static let idleThreshold: Double = 120 // seconds
     private static let heartbeatInterval: TimeInterval = 60 // seconds
 
-    /// Escalating interval based on user's chosen period and session duration
     private func effectiveInterval(sessionMinutes: Int) -> TimeInterval {
-        let base = TimeInterval(reminderIntervalMinutes * 60)
-        switch sessionMinutes {
-        case ..<10: return base
-        case 10..<20: return max(base / 2, 30)
-        case 20..<30: return max(base / 4, 30)
-        default: return 30
-        }
+        return TimeInterval(reminderIntervalMinutes * 60)
     }
 
     // YouTube budget: minutes of YouTube earned per hour of work
-    static let ytBudgetMinutesPerHour: Double = 10
+    @AppStorage("ytBudgetMinutesPerHour") var ytBudgetMinutesPerHour: Double = 10
 
-    /// Total YouTube time (videos + shorts combined)
+    /// Total YouTube time today (videos + shorts combined)
     var totalYoutubeSeconds: Int {
         youtubeSeconds + youtubeShortsSeconds
     }
 
-    /// Earned YouTube seconds based on work time
-    var earnedYoutubeSeconds: Int {
-        Int((Double(workingSeconds) / 3600.0) * Self.ytBudgetMinutesPerHour * 60.0)
+    /// 7-day rolling YouTube total (past 6 days + today)
+    var weekYoutubeSeconds: Int {
+        past6DaysYoutubeSeconds + totalYoutubeSeconds
     }
 
-    /// Remaining budget (negative = over budget)
+    /// 7-day rolling work total (past 6 days + today)
+    var weekWorkingSeconds: Int {
+        past6DaysWorkingSeconds + workingSeconds
+    }
+
+    /// Earned YouTube seconds based on 7-day rolling work time
+    var earnedYoutubeSeconds: Int {
+        Int((Double(weekWorkingSeconds) / 3600.0) * ytBudgetMinutesPerHour * 60.0)
+    }
+
+    /// Remaining budget (negative = over budget), 7-day rolling
     var budgetRemainingSeconds: Int {
-        earnedYoutubeSeconds - totalYoutubeSeconds
+        earnedYoutubeSeconds - weekYoutubeSeconds
+    }
+
+    /// Today's budget remaining (negative = over budget)
+    var todayBudgetRemainingSeconds: Int {
+        let earned = Int((Double(workingSeconds) / 3600.0) * ytBudgetMinutesPerHour * 60.0)
+        return earned - totalYoutubeSeconds
+    }
+
+    /// Current continuous YouTube session duration in seconds
+    var youtubeSessionSeconds: Int {
+        guard let start = youtubeSessionStart else { return 0 }
+        return Int(Date().timeIntervalSince(start))
     }
 
     func start() {
@@ -84,10 +108,12 @@ final class ActivityMonitor: ObservableObject {
         timer?.invalidate()
         timer = nil
         isRunning = false
+        youtubeSessionStart = nil
         logger.info("Monitor stopped")
     }
 
     private func poll() {
+        checkDayChange()
         let (category, appName, windowTitle) = detectActivity()
         currentCategory = category
         currentAppName = appName
@@ -139,14 +165,16 @@ final class ActivityMonitor: ObservableObject {
 
         if youtubeSessionStart == nil {
             youtubeSessionStart = now
+            lastBreakReminder = now
         }
 
         guard let sessionStart = youtubeSessionStart else { return }
         let sessionMinutes = Int(now.timeIntervalSince(sessionStart) / 60)
         let timeSinceLastReminder = now.timeIntervalSince(lastBreakReminder)
 
-        // Over budget: every 30 seconds
-        if budgetRemainingSeconds < 0 && timeSinceLastReminder >= 30 {
+        // Over budget: use configured interval
+        let minInterval = TimeInterval(reminderIntervalMinutes * 60)
+        if budgetRemainingSeconds < 0 && timeSinceLastReminder >= minInterval {
             fireBreakReminder(minutes: sessionMinutes)
             lastBreakReminder = now
             return
@@ -196,6 +224,31 @@ final class ActivityMonitor: ObservableObject {
         NSApp.requestUserAttention(.criticalRequest)
 
         logger.info("Break reminder fired (\(severity)): \(body)")
+    }
+
+    private func checkDayChange() {
+        let today = Self.todayString()
+        if today != lastPollDay {
+            if !lastPollDay.isEmpty {
+                logger.info("Day changed from \(self.lastPollDay) to \(today), resetting counters")
+                youtubeSeconds = 0
+                youtubeShortsSeconds = 0
+                workingSeconds = 0
+                youtubeSessionStart = nil
+                lastBreakReminder = .distantPast
+                lastCategory = nil
+                lastSampleTime = .distantPast
+                onDayChanged?()
+            }
+            lastPollDay = today
+        }
+    }
+
+    private static func todayString() -> String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        fmt.timeZone = .current
+        return fmt.string(from: Date())
     }
 
     private func detectActivity() -> (ActivityCategory, String, String) {

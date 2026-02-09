@@ -19,17 +19,7 @@ struct MothApp: App {
         store.rollupOldSamples()
     }
 
-    /// Color escalation based on total daily YouTube time (videos + shorts)
-    private var ytColor: Color {
-        switch monitor.totalYoutubeSeconds {
-        case ..<1800: return .green
-        case ..<3600: return .yellow
-        case ..<5400: return .orange
-        default: return .red
-        }
-    }
-
-    /// Budget color
+    /// Budget color based on 7-day rolling budget
     private var budgetColor: Color {
         let remaining = monitor.budgetRemainingSeconds
         if remaining < 0 { return .red }
@@ -37,39 +27,22 @@ struct MothApp: App {
         return .green
     }
 
-    /// Budget label text
-    private var budgetLabel: String {
-        let remaining = monitor.budgetRemainingSeconds
-        if remaining >= 0 {
-            return "\(remaining / 60)m left"
-        } else {
-            return "\(abs(remaining) / 60)m over"
-        }
-    }
-
     var body: some Scene {
         MenuBarExtra {
             MenuBarView(monitor: monitor, store: store)
         } label: {
             HStack(spacing: 6) {
-                if monitor.currentCategory.isYouTube {
-                    Image(systemName: "play.circle.fill")
-                        .symbolRenderingMode(.palette)
-                        .foregroundStyle(.white, .red)
-                } else {
-                    Image(systemName: "clock.fill")
-                }
-
-                // YouTube total with escalation color
-                if monitor.totalYoutubeSeconds > 0 {
-                    Text(TimeFormatter.format(seconds: monitor.totalYoutubeSeconds))
-                        .foregroundStyle(ytColor)
-                }
-
-                // Budget remaining with its own color
-                if monitor.totalYoutubeSeconds > 0 || monitor.workingSeconds > 0 {
-                    Text(budgetLabel)
+                if !monitor.isRunning {
+                    Image(nsImage: MothIcon.resting)
+                    Text("⏸ Paused")
+                } else if monitor.currentCategory.isYouTube {
+                    Image(nsImage: MothIcon.active(
+                        color: monitor.budgetRemainingSeconds < 0 ? .systemRed : .systemYellow
+                    ))
+                    Text("▶ \(TimeFormatter.format(seconds: monitor.youtubeSessionSeconds)) · \(TimeFormatter.format(seconds: monitor.totalYoutubeSeconds)) today")
                         .foregroundStyle(budgetColor)
+                } else {
+                    Image(nsImage: MothIcon.resting)
                 }
             }
             .task {
@@ -86,12 +59,29 @@ struct MothApp: App {
             }
             monitor.onInsertSample = { [store] category, appName, windowTitle in
                 store.insertSample(category: category, appName: appName, windowTitle: windowTitle)
+                if category.isYouTube {
+                    store.recordWatch(category: category, title: windowTitle)
+                }
+            }
+            monitor.onDayChanged = { [store, weak monitor] in
+                store.rollupOldSamples()
+                let summary = store.todaySummary()
+                monitor?.youtubeSeconds = summary[.youtube] ?? 0
+                monitor?.youtubeShortsSeconds = summary[.youtubeShorts] ?? 0
+                monitor?.workingSeconds = summary[.working] ?? 0
+                let history = store.past6DaysBudgetData()
+                monitor?.past6DaysYoutubeSeconds = history.youtubeSeconds
+                monitor?.past6DaysWorkingSeconds = history.workingSeconds
             }
 
             let summary = store.todaySummary()
             monitor.youtubeSeconds = summary[.youtube] ?? 0
             monitor.youtubeShortsSeconds = summary[.youtubeShorts] ?? 0
             monitor.workingSeconds = summary[.working] ?? 0
+
+            let history = store.past6DaysBudgetData()
+            monitor.past6DaysYoutubeSeconds = history.youtubeSeconds
+            monitor.past6DaysWorkingSeconds = history.workingSeconds
 
             if UserDefaults.standard.object(forKey: "startOnLaunch") == nil || UserDefaults.standard.bool(forKey: "startOnLaunch") {
                 monitor.start()

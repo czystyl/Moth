@@ -73,6 +73,9 @@ struct WeeklyTrendView: View {
     private func shortTime(_ seconds: Int) -> String {
         let m = seconds / 60
         if m < 60 { return "\(m)m" }
-        return "\(m / 60)h"
+        let hours = m / 60
+        let mins = m % 60
+        if mins == 0 { return "\(hours)h" }
+        return "\(hours)h\(mins)m"
     }
 }
